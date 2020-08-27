@@ -1,0 +1,454 @@
+---
+title: "Hotel-booking-demand.Rmd"
+author: "Rajeev"
+date: "27/08/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+# Introduction
+Being able to accurately predict future hotel booking cancellation has a great impact on the business management and revenue generation. Therefore, applying the science of data to build models for prediction is highly demanded by business owners and managers, and has direct and tangible impact on running the business efficiently and effectively.
+In this project, a machine learning algorithm was developed based on testing three different data models: logistic regression, classification tree, and random forest to predict future booking cancellation based on the characteristics of the collected bookings data. 
+
+# Goal of the Project
+This project aims at building a prediction algorithm based on cancelled hotel reservations to be able to predict future cancellation taking into consideration seven different factors affecting the prediction algorithm. Validation of the selected machine learning algorithm is ensured through the validation dataset. The evaluation criterion of the generated models is the accuracy metrics. 
+
+# Methodology
+After exploring the dataset, three different models were adopted based on 7 different features of the dataset selected based on the correlation coefficient with the target variable is_canceled.
+
+1. Logistic Regression Model
+2. Classification Tree Model
+3. Random Forest Model
+  
+Then, cross validation was applied to determine the best model with the highest accuracy value on the validation dataset.
+
+#### Download and install necessary packages
+```{r Package Installation, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2")
+if(!require(gridExtra)) install.packages("gridExtra")
+if(!require(dplyr)) install.packages("dplyr")
+if(!require(scales)) install.packages("scales")
+if(!require(readr)) install.packages("readr")
+if(!require(rpart)) install.packages("rpart")
+if(!require(rpart.plot)) install.packages("rpart.plot")
+if(!require(rattle)) install.packages("rattle")
+if(!require(randomForest)) install.packages("randomForest")
+if(!require(corrplot)) install.packages("corrplot")
+if(!require("e1071")) install.packages("e1071")
+if(!require("class")) install.packages("class")
+```
+
+#### To access the source file hotel_bookings.csv from the github repository
+#### "https://github.com/MarwaJN/CYO-Project.git"
+```{r Accessing data source file, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data<-read.csv("hotel_bookings.csv")
+str(hotel_data)
+```
+
+#### In order to further understand the data two columns were added to calculate the total nights and total cost per stay per customer
+```{r Mutate hotel_data dataset, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+# Calculating total nights stayed at hotel for each customer in a new column
+hotel_data <- hotel_data %>% mutate(total_nights = stays_in_weekend_nights + stays_in_week_nights)
+
+# Calculating total total cost of stay for each customer in a new column
+hotel_data <- hotel_data %>% mutate(total_cost = adr * total_nights)
+
+# Check the added two columns
+head(hotel_data)
+```
+
+#### Clean the dataset to prepare for exploration and further analysis and replace any missing values 
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+# Convert characters variables into factors for further analysis
+hotel_data <- hotel_data %>% 
+  mutate(
+    hotel = as.factor(hotel),
+    meal = as.factor(meal),
+    arrival_date_year = as.factor(arrival_date_year),
+    arrival_date_month = as.factor(arrival_date_month),
+    country = as.factor(country),
+    market_segment = as.factor(market_segment),
+    distribution_channel = as.factor(distribution_channel),
+    reserved_room_type = as.factor(reserved_room_type),
+    assigned_room_type = as.factor(assigned_room_type),
+    deposit_type = as.factor(deposit_type),
+    agent = as.factor(agent),
+    company = as.factor(company),
+    customer_type = as.factor(customer_type),
+    reservation_status = as.factor(reservation_status)
+  )
+```
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+# Check for any missing value in the hotel_data dataset
+any(is.na(hotel_data))
+
+# Find any missing values in the dataset and return the column name
+list_NA <- colnames(hotel_data)[apply(hotel_data, 2, anyNA)]
+list_NA
+
+# Replace the missing values in the Children Column in the hotel_data dataset with the babies column value
+
+missing_list <- length(hotel_data$children)
+for (i in 1:missing_list){
+  if(is.na(hotel_data$children[i]))
+    hotel_data$children[i] <- hotel_data$babies[i]
+}
+```
+##  1) Exploring the structure of the hotel_data dataset
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+dim(hotel_data)
+str(hotel_data)
+summary(hotel_data)
+class(hotel_data)
+```
+#### Calculating and displaying the number of rows and columns in the hotel_data dataset
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+paste('There are ',nrow(hotel_data),'rows', 'and ', 
+      ncol(hotel_data), 'columns in the hotel data dataset')
+```
+#### Displaying a table of the two available options of reservations
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+table(hotel_data$hotel)
+# It is noted that City Hotel had much more reservations than Resort Hotels
+```
+#### Display pie_chart of the canceled bookings
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_pie <- table(hotel_data$is_canceled)
+hotel_cancel <- c("Not Canceled", "Canceled")
+percent <- round(hotel_pie/sum(hotel_pie)*100)
+hotel_cancel <- paste(hotel_cancel,percent)
+hotel_cancel <- paste(hotel_cancel,"%", sep="")
+pie(hotel_pie, hotel_cancel, main = "Cancelled Bookings Distribution")
+```
+
+#### Display pie_chart of the hotels variable
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_pie <- table(hotel_data$hotel)
+hotel_type <- names(hotel_pie)
+percent <- round(hotel_pie/sum(hotel_pie)*100)
+hotel_type <- paste(hotel_type,percent)
+hotel_type <- paste(hotel_type,"%", sep="")
+pie(hotel_pie, hotel_type, main = "Hotel Bookings Distribution")
+```
+#### Display pie_chart of the Reservation Status of the Booking
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_pie <- table(hotel_data$reservation_status)
+hotel_status <- names(hotel_pie)
+percent <- round(hotel_pie/sum(hotel_pie)*100)
+hotel_status <- paste(hotel_status,percent)
+hotel_status <- paste(hotel_status,"%", sep="")
+pie(hotel_pie, hotel_status, main = "Hotel Bookings Reservation Status Distribution")
+```
+#### Display country with highest number of reservations for both city and resort
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% group_by(hotel,country)%>%
+  summarize(No. = n())%>%
+  arrange(desc(No.))
+# Portugal has the highest number of hotel bookings
+```
+#### Display market segment with the highest number of bookings for both city and resort hotels
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% group_by(hotel, market_segment)%>%
+  summarize(No. = n())%>%
+  arrange(desc(No.))
+# Online City Hotel bookings through agent had the highest record
+```
+##  2) Understanding Cancellation Behavior in the hotel_data dataset
+#### Display booking status per year
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=arrival_date_year, fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per Years", 
+       x= "Year of Arrival", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme_light()
+```
+#### Display booking status per month
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=arrival_date_month, fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per Month", 
+       x= "Month of Arrival", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+#### Display booking status per No. of children
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=as.factor(children), fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per No. of Children", 
+       x= "No. of Children", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme_light()
+```
+#### Display booking status per deposit type
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=deposit_type, fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per Deposit Type", 
+       x= "Deposit Type", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+#### Display booking status per distribution channel
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=distribution_channel, fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per Distribution Channel", 
+       x= "Distribution Channel", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+#### Display booking status per customer type
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=customer_type, fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per Customer Type", 
+       x= "Customer Type", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name= "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+#### Display booking status per repeated guests
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=as.factor(is_repeated_guest), fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per Repeated Guests", 
+       x= "Repeated Guests", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name= "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme_light()
+```
+#### Display booking status per stayed nights
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=total_nights, fill = factor(is_canceled)))+
+  geom_bar()+
+  labs(title="Displaying Booking Status per Stayed Nights", 
+       x= "No. of Stayed Nights", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  xlim(1,15)+
+  theme_light()
+```
+#### Display booking status per total cost of stay
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=total_cost, fill = factor(is_canceled)))+
+  geom_histogram()+ 
+  labs(title="Displaying Booking Status per Total Cost of Stay", 
+       x= "Total Cost", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  xlim(0,1500)+
+  theme_light()
+```
+#### Display booking status per lead time
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=lead_time, fill = factor(is_canceled)))+
+  geom_histogram()+ 
+  labs(title="Displaying Booking Status per Lead Time", 
+       x= "Lead Time", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  xlim(0,400)+
+  theme_light()
+```
+#### Display booking status per days in waiting list
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% filter(days_in_waiting_list>1) %>%
+  ggplot(aes(x=days_in_waiting_list, fill = factor(is_canceled)))+
+  geom_histogram()+ 
+  labs(title="Displaying Booking Status per Days in Waiting Lists", 
+       x= "Days in Waiting List", 
+       y= "Cancellation Count")+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme_light()
+```
+#### Display booking Status across Market Segments
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_data %>% ggplot(aes(x=total_nights, fill=factor(is_canceled)))+
+  geom_histogram()+
+  scale_fill_discrete(name = "Booking Status",
+                      breaks = c("0", "1"),
+                      label = c("Not Canceled", "Canceled"))+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ylim(0,500)+
+  facet_wrap(~market_segment)
+```
+##  3) Create Data Partitions for training and validation purposes
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+set.seed(1, sample.kind="Rounding")
+
+test_index <- createDataPartition(y = hotel_data$is_canceled, times = 1, p = 0.1, list = FALSE)
+hotel_train <- hotel_data[-test_index,]
+dim(hotel_train)
+temp <- hotel_data[test_index,]
+
+# Validation data set is 10% of the hotel_data 
+hotel_valid <- temp
+dim(hotel_valid)
+# Clean memory
+rm(temp, test_index)
+```
+##  4) Data Analysis & Modelling
+#### In order to start the modeling process the factor variables has been converted to numeric variables in our training set 
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+conv_numeric <- hotel_train %>% mutate_if(is.factor, as.numeric)
+```
+#### Calculate the correlation coefficient for the target variable "is_canceled"
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+correlations <- cor(conv_numeric$is_canceled,  conv_numeric[,c("is_canceled","hotel","is_repeated_guest", "company",          "agent", "adults", "children", "babies", "is_repeated_guest", 
+"meal","customer_type", "adr", "total_nights", "total_cost",  "days_in_waiting_list", "required_car_parking_spaces", "arrival_date_year","lead_time", "stays_in_weekend_nights", "stays_in_week_nights", "country", "market_segment","distribution_channel", "previous_bookings_not_canceled", "previous_cancellations",
+"reserved_room_type", "assigned_room_type", "booking_changes", "deposit_type")])
+```
+#### Then plot the correlation coefficient
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+corrplot(correlations, method="circle")
+```
+#### It is apparent from the plot that the following variables have strong relation to cancellation
+#### deposit_type, country, distribution_channel, company, lead_time, previous_cancellations, required_car_parking
+
+#### Then the factors with the strong relation to the target variable will be selected for further modeling and analysis from both training & testing datasets hotel_train, hotel_valid respectively
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_train <- hotel_train[c("is_canceled", "country", "deposit_type", "distribution_channel", "company", "lead_time", "required_car_parking_spaces", "previous_cancellations")]
+colnames(hotel_train)
+hotel_valid <- hotel_train[c("is_canceled", "country", "deposit_type", "distribution_channel", "company", "lead_time", "required_car_parking_spaces", "previous_cancellations")]
+colnames(hotel_valid)
+```
+#### Convert factors to numeric values for modeling purposes
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+hotel_train <- hotel_train %>% mutate_if(is.factor, as.numeric)
+hotel_valid <- hotel_valid %>% mutate_if(is.factor, as.numeric)
+```
+## A) glm Model
+```{r glm model, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+set.seed(1, sample.kind="Rounding")
+
+# Generate glm model
+glm_model <- glm(is_canceled~.,family="binomial", data = hotel_train)
+
+# Predict the model on the validation dataset
+pred_glm <- predict(glm_model, hotel_valid, type="response")
+# Record the model prediction results in a binary form of 0 and 1 
+pred_glm_class <-ifelse(pred_glm>0.5,"1","0") 
+
+# Record the prediction against actual data in the validation dataset
+glm_pred_table <- table(pred_glm_class, hotel_valid$is_canceled, dnn=c("predicted","actual"))
+glm_pred_table
+
+# Calculate model accuracy based on the prediction table "pred_table" where prediction met actual in the validation dataset hotel_valid
+glm_accuracy <- ((glm_pred_table[1,1]+glm_pred_table[2,2])/nrow(hotel_valid))*100
+```
+#### Store Model Results
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+model_results <- data.frame(Method_Name = "Logestic Regression Model", Accuracy = glm_accuracy)
+model_results
+# Store and Update Model Results Table
+model_results %>% knitr::kable()
+```
+## B) Classification Tree Model
+```{r rpart model, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+set.seed(1, sample.kind="Rounding")
+
+# Generate the classification tree model
+class_tree_model <- rpart(is_canceled~., data = hotel_train, method="class")
+
+# Plot the classification tree 
+rpart.plot(class_tree_model)
+
+# Predict the model on the validation dataset
+pred_class_tree <- predict(class_tree_model, as.data.frame(hotel_valid), type = "class")
+
+# Display prediction results
+class_tree_pred_table <- table(pred_class_tree, hotel_valid$is_canceled, dnn = c("Predicted","Actual"))
+class_tree_pred_table
+
+# Calculate accuracy of the class tree model
+class_tree_accuracy <- ((class_tree_pred_table[1,1]+class_tree_pred_table[2,2])/nrow(hotel_valid))*100
+```
+#### Store Model Results
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+model_results <- bind_rows(model_results, data.frame(Method_Name = "Classification Tree Model", Accuracy = class_tree_accuracy))
+model_results
+
+# Store and Update Model Results Table
+model_results %>% knitr::kable()
+```
+## C) Random Forest Model
+```{r random forest model, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+set.seed(1, sample.kind="Rounding")
+
+# Generate random forest model
+rf_model <- randomForest(is_canceled~., data = hotel_train, ntree= 50)
+
+# Predict the model on the validation dataset
+pred_rf <- predict(rf_model,hotel_valid,type="response")
+
+# Record the model prediction results in a binary form of 0 and 1 
+pred_rf_class <-ifelse(pred_rf>0.5,"1","0") 
+
+# Record the prediction against actual data in the validation dataset
+rf_pred_table <- table(pred_rf_class, hotel_valid$is_canceled, dnn = c("predicted","actual"))
+rf_pred_table
+
+# Calculate accuracy of the Random Forest Model
+rf_accuracy <- ((rf_pred_table[1,1]+rf_pred_table[2,2])/nrow(hotel_valid))*100
+```
+#### Store Model Results
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+model_results <- bind_rows(model_results, data.frame(Method_Name = "Random Forest Model", Accuracy = rf_accuracy))
+model_results
+
+# Store and Update Model Results Table
+model_results %>% knitr::kable()
+```
+
+# Results
+
+After conducting comprehensive exploration and analysis of the data, different models were generated taking into consideration 7 different factors with strong positive and negative relations to the target variable is_cancel. 
+The evaluation criteria of all three generated data models considered the accuracy of the model based on the predicted cancellations matching the actual cancellation in the validation dataset hotel_valid. As the outcome of the models is binary (0 and 1) the accuracy was simply calculated from the prediction table for each of the generated models 
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+model_results %>% knitr::kable()
+```
+#### Plotting the accuracy values for the generated models
+```{r, echo = TRUE, message = FALSE, warning = FALSE, eval = TRUE}
+model_results %>% ggplot(aes(nrow(hotel_valid),Accuracy, color=Method_Name))+geom_point()
+```
+As shown, the best performing model was the Random Forest Model with an accuracy score of 79%. The selected number of trees for this model was 50.
+
+# Conclusion
+
+In conclusion, based on the available resources the best machine algorithm for predicting future booking cancellations for this project took into consideration seven different factors affecting the cancellation of hotel bookings. Those factors were selected based on the correlation coefficient value associated with the target logical variable in the dataset â€˜is_canceledâ€™. It has been concluded that the Random Forest Model would give the most accurate prediction for future booking cancellations.
+
+# Future Work
+
+This algorithm may be further enhanced to achieve better results. More complex algorithms can be generated and evaluated through better processing power and analyzing more factors in dataset may also lead to better results. Due to limited available computational processing power and the nature of the dataset (short period of data records) only three models were tested and validated on the available dataset. 
